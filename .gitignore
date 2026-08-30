@@ -12,7 +12,11 @@ models/*.onnx
 models/*.safetensors
 models/best/
 models/checkpoints/
+checkpoints/
 !models/.gitkeep
+
+# Training logs
+run.log
 
 # Data (keep raw exports locally; too heavy / licensing for git)
 data/raw/

@@ -1,0 +1,11 @@
+stage,pair_a,pair_b,expected,cosine
+BASELINE_UNFINE_TUNED,Samudayik Bhavan Nirman,Community Bhavan,MATCH,0.5143
+BASELINE_UNFINE_TUNED,Bhavan,Bhawan,MATCH,0.8985
+BASELINE_UNFINE_TUNED,Nali Nirman,Construction of drain,MATCH,0.1061
+BASELINE_UNFINE_TUNED,Kharanja,CC Road,MATCH,0.2728
+BASELINE_UNFINE_TUNED,Shauchalaya Nirman,Construction of toilet,MATCH,0.1337
+BASELINE_UNFINE_TUNED,Construction of school building at Village A,Construction of school building at Village B,NOT_MATCH,0.9799
+BASELINE_UNFINE_TUNED,Construction of road,Supply of computers to school,NOT_MATCH,0.1666
+BASELINE_UNFINE_TUNED,Khel Maidan Vikas,Repair of water tank,NOT_MATCH,0.1353
+BASELINE_UNFINE_TUNED,Aanganwadi Bhawan Nirman,Solar street light installation,NOT_MATCH,0.0392
+BASELINE_UNFINE_TUNED,Community Bhavan construction,Vaccination camp for cattle,NOT_MATCH,0.1096
