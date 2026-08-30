@@ -7,6 +7,42 @@ either. Entries are date-ordered, newest first. Mirrored to the Notion working d
 
 ---
 
+## 2026-08-30 — VERIFICATION: model identity confirmed; MP risk scale separated
+
+### Technical
+- **Model identity verified (MISMATCH — log wording, not code):** Loaded and inspected
+  `models/best/epoch_4.0` — `config.json` (bert, hidden_size=384, 12 layers,
+  intermediate 1536, XLM-R Unigram tokenizer vocab 250002) and the fine-tune script
+  (`scripts/finetune.py` `MODEL_NAME`) both confirm **`paraphrase-multilingual-MiniLM-L12-v2`**
+  (117,653,760 params; `model.safetensors` = 470 MB fp32 ≈ 236 MB fp16 → the "118M /
+  ~420MB / fits 4 GB VRAM" plan claim holds). It is **NOT** `intfloat/multilingual-e5-base`
+  (which is 768-dim and was never used). The e5 name only appeared in my Notion prose
+  (a naming slip) and a HF repo-name suggestion in `docs/DEPLOYMENT.md` — both corrected
+  (repo now: `sIH26102/mplads-minilm-embed-v1`). No code or checkpoint was ever affected.
+- **MP risk scale fixed:** `metrics/mp_aggregate.csv` previously exposed a column `risk`
+  (e.g. 2039) that is the SUM of weighted flags across an MP's works — on a different
+  scale than the per-work `risk_score` 0-100. Now split into:
+  - `cumulative_risk_points` (the weighted roll-up, named explicitly as POINTS) and
+  - `avg_risk_per_work` (= mean of per-work 0-100 `risk_score`; directly comparable).
+  `risk_rank` still sorts by `cumulative_risk_points`. Dashboard contract in
+  `docs/DEPLOYMENT.md` updated: the two values must never share one "risk score" label.
+- Notion log block corrected in-place (8th update) with an edit tag; full notes 9th update.
+
+### Layman
+- Two "oops" checks done for the demo:
+  1. **Which AI model did we actually use?** We double-checked the saved model files
+     themselves and the training script — it is exactly the small multilingual model we
+     planned (`paraphrase-multilingual-MiniLM-L12-v2`, ~118M parameters, ~470MB). Fits in a
+     4GB graphics card with room to spare. One of our log write-ups wrongly said a
+     different bigger model (e5-base); the log entry has been corrected in Notion, and the
+     deploy guide's model name fixed. The actual trained files were always correct.
+  2. **Two different 'risk numbers' was confusing.** Work-level risk is 0-100 per case;
+     the MP table's 2039 was a TOTAL. Now the MP table clearly separates the total
+     (`cumulative_risk_points`) from the per-work average (0-100 `avg_risk_per_work`) so a
+     judge never sees two things wearing the same label.
+
+---
+
 ## 2026-08-30 — Repo cleanup + go-live deployment guide
 
 ### Technical
