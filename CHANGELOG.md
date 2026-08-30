@@ -7,6 +7,76 @@ either. Entries are date-ordered, newest first. Mirrored to the Notion working d
 
 ---
 
+## 2026-08-30 — Detection engine v1 (D1/D2/D3) + risk scoring + evidence dossiers
+
+### Technical
+- New clean package `src/mplads/` (config, features, rules, duplicates, anomaly, engine,
+  aggregate, evidence) + CLI `scripts/run_detection.py`.
+- D1 Isolation Forest (5% contamination) on F1-F4 engineered features (sanction delta,
+  disbursed ratio, vendor/pay counts, stage-transition days + raw amounts).
+- D2 duplicate fuzzy-match: folds the real-data sweep verdicts into per-work signals
+  (`has_duplicate_lead` = cross-FY partner, `dup_partner_count`, `dup_partner_sim_max`).
+- D3 deterministic rule flags: stalled (anchor RF2 reproduced: 1,190), incomplete, sanction
+  overrun (>120% of recommended), zero disbursal (2,777), cost overrun.
+- Transparent risk score 0-100 (`metrics/flags.csv`, 17,880 rows): stalled 35, dup-lead 25,
+  zero-disbursal 20, overrun 15, anomaly 20, unparseable 10. 3,815/17,879 flagged; 468
+  duplicate-claim leads; 894 anomaly outliers; top risk 80.
+- MP aggregate (`metrics/mp_aggregate.csv`, `metrics/worst_offenders.csv`): per-MP counts,
+  totals, spend% alloc, weighted risk rank. Top: Chandra Prakash Choudhary (457 works, 379
+  stalled), Jaswantsinh Sumanbhai Bhabhor (140 works, 40 dup leads, 46 anomalies).
+- Evidence dossiers (`evidence/*.md`): per-work raw-row pull from original
+  Recommended/Sanctioned/Completed/Expenditure files (regex `MPxxx/fy/n` embedded in WORK,
+  Work ID) + flag reasoning + human verification checklist. 50 top-risk dossiers + index.
+- Fixed: pandas named-agg misbehaved on the duplicate `work_id` column from axis-1 concat
+  (stalled counts were summing a money column) — dropped dup column, verified counts exact.
+  Bug was caught because the aggregate table disagreed with the known 1,190 anchor.
+- Fixed: `_find_row` matched on IDA (district authority) instead of the embedded work ID.
+
+### Layman
+- We built the "investigator" itself now. Three separate ways it flags a suspicious work:
+  (1) rules — e.g. sanctioned years ago but never completed, sanctioned but zero rupees
+  paid; (2) duplicate resubmission — same work, same amount, resubmitted in another year,
+  found by inside the model; (3) statistical outlier — numbers that look unlike any normal
+  work of its kind.
+- Every work gets a 0-100 risk score and the reason in plain text. 3,815 of 17,879 works
+  carry at least one flag; 468 are duplicate-resubmission leads.
+- We ranked the MPs by risk. The worst-offender list starts with an MP with 457 works and
+  379 stalled (sanctioned, never completed) — a ready-made "who to question first" for the
+  judges.
+- For the top 50 risks we generated one evidence file each — like a case file that pulls
+  the actual rows from the original uploaded government files, states why it looks wrong,
+  and lists exactly what a human should verify. The model never gives legal conclusions.
+
+---
+
+## 2026-08-30 — REAL-DATA validation: duplicate sweep across all 10,539 described works
+
+### Technical
+- `scripts/real_sweep.py` + `metrics/real_sweep.csv`: swept all 10,539 works (desc ≥ 10 chars)
+  grouped by (mp_no, recommended_amount); cosine sim ≥ 0.80 = duplicate-claim candidate,
+  computed with BOTH models.
+- Fine-tuned model flags **95,589 pairs** (168 MPs) vs frozen **141,235** → fine-tune
+  dropped ~32% of false positives (hard-negative training tightened look-alike separation).
+- Of the fine-tuned pairs, **1,432 are cross-financial-year resubmissions** (same MP +
+  same amount + near-identical description across financial years) = the canonical
+  duplicate-resubmission fraud pattern, across 35 MPs. Top MPs: Durga Das Uikey (561),
+  Jaswantsinh Sumanbhai Bhabhor (238), Adv Dean Kuriakose (178), Vijay Kumar Dubey (121).
+- Top-similarity hits are literal repeat titles (e.g. "Physical Inspection" ×10 at 1.000,
+  MP243) — textbook duplicate-claim leads. Candidates written for human review.
+
+### Layman
+- Finally, a real test on real data (not just the 10 practice pairs). We asked the model:
+  "scan all 10,539 real works that have a description, and find works that are the same
+  thing re-submitted as new".
+- The trained model found ~96,000 candidate pairs in 168 MPs. Compared to the untrained
+  model, it flagged 32% fewer — meaning training taught it to STOP crying wolf on works
+  that only look similar but are actually different.
+- Of everything found, 1,432 pairs are the exact fraud pattern we want: the same work, in
+  the same amount, re-submitted in a different year. Concentrated in 35 MPs — a perfect
+  "who to investigate first" list for the judges. Top: Durga Das Uikey (561 pairs).
+
+---
+
 ## 2026-08-30 — Fine-tune complete: before/after evaluated, model saved
 
 ### Technical
@@ -40,31 +110,7 @@ either. Entries are date-ordered, newest first. Mirrored to the Notion working d
 
 ---
 
-## 2026-08-30 — REAL-DATA validation: duplicate sweep across all 10,539 described works
-
-### Technical
-- `scripts/real_sweep.py` + `metrics/real_sweep.csv`: swept all 10,539 works (desc ≥ 10 chars)
-  grouped by (mp_no, recommended_amount); cosine sim ≥ 0.80 = duplicate-claim candidate,
-  computed with BOTH models.
-- Fine-tuned model flags **95,589 pairs** (168 MPs) vs frozen **141,235** → fine-tune
-  dropped ~32% of false positives (hard-negative training tightened look-alike separation).
-- Of the fine-tuned pairs, **1,432 are cross-financial-year resubmissions** (same MP +
-  same amount + near-identical description across financial years) = the canonical
-  duplicate-resubmission fraud pattern, across 35 MPs. Top MPs: Durga Das Uikey (561),
-  Jaswantsinh Sumanbhai Bhabhor (238), Adv Dean Kuriakose (178), Vijay Kumar Dubey (121).
-- Top-similarity hits are literal repeat titles (e.g. "Physical Inspection" ×10 at 1.000,
-  MP243) — textbook duplicate-claim leads. Candidates written for human review.
-
-### Layman
-- Finally, a real test on real data (not just the 10 practice pairs). We asked the model:
-  "scan all 10,539 real works that have a description, and find works that are the same
-  thing re-submitted as new".
-- The trained model found ~96,000 candidate pairs in 168 MPs. Compared to the untrained
-  model, it flagged 32% fewer — meaning training taught it to STOP crying wolf on works
-  that only look similar but are actually different.
-- Of everything found, 1,432 pairs are the exact fraud pattern we want: the same work, in
-  the same amount, re-submitted in a different year. Concentrated in 35 MPs — a perfect
-  "who to investigate first" list for the judges. Top: Durga Das Uikey (561 pairs).
+## 2026-08-30 — Pre-training setup: baseline, pairs, training script, env
 
 ### Technical
 - `scripts/baseline_jury_pairs.py` + `metrics/baseline_metrics.csv`: frozen-model scores on
