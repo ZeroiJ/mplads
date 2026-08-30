@@ -1,0 +1,39 @@
+flowchart TD
+    subgraph DS["Data Sources"]
+        A1["Project Overview CSV/XLSX - current snapshot per project, not time-series"]
+        A2["Flash Report PDF - monthly, ~1yr history"]
+        A3["TABLE 6 All Ongoing Projects - PRIMARY, 1981 projects, adds schedule dates"]
+    end
+    subgraph ETL["Data Pipeline"]
+        B1["Ingestion and Cleaning"]
+        B2["Features: cost history, progress %, sector, ministry, schedule"]
+        B3["Reconstruct per-project time series by chaining monthly PDFs"]
+    end
+    subgraph MODEL["Prediction Layer"]
+        C1["Baseline statistical/trend - PRIMARY"]
+        C2["ML gradient boosting - SECONDARY"]
+        C3["Baseline vs ML comparison"]
+    end
+    subgraph RISK["Risk Engine"]
+        D1["Risk score: on-track / watch / at-risk"]
+        D2["Driver analysis - what pushes risk up"]
+    end
+    subgraph UI["Dashboard"]
+        E1["Portfolio overview"]
+        E2["Project drilldown"]
+        E3["Early-warning alerts"]
+    end
+    A1 --> B1
+    A2 --> B1
+    A3 --> B1
+    B1 --> B2
+    B2 --> B3
+    B3 --> C1
+    B3 --> C2
+    C1 --> C3
+    C2 --> C3
+    C3 --> D1
+    D1 --> D2
+    D1 --> E1
+    D2 --> E2
+    D1 --> E3

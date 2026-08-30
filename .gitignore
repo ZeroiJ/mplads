@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ML artifacts (trained models are NOT committed - on disk / cloud storage)
+models/*.pt
+models/*.pth
+models/*.onnx
+models/*.safetensors
+models/best/
+models/checkpoints/
+!models/.gitkeep
+
+# Data (keep raw exports locally; too heavy / licensing for git)
+data/raw/
+*.csv.bak
+
+# Local tool state
+.omo/
+.opencode/

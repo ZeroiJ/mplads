@@ -1,0 +1,41 @@
+flowchart TD
+    subgraph DS["Data Sources (Cached, Public)"]
+        A1[mplads.gov.in per-work tables]
+        A2[eSAKSHI historical data Apr 2023 onward]
+    end
+
+    subgraph ETL["Data Pipeline"]
+        B1[Ingestion and Cleaning]
+        B2[Normalize schema: pre and post eSAKSHI era]
+    end
+
+    subgraph DETECT["Detection Modules"]
+        C1[Cost-Norm Anomaly Detection - Isolation Forest]
+        C2[Duplicate-Work Detection - text similarity + geo + amount]
+        C3[Delay Prediction - rules or regression]
+    end
+
+    subgraph RISK["Risk Aggregation"]
+        D1[Combine signals into Risk Score per work]
+        D2[Guardrail: label as review flag, never accusation]
+    end
+
+    subgraph UI["Dashboard - One View, Role Filters"]
+        E1[Flagged Cases List]
+        E2[Filter by MP / District / State / Ministry]
+        E3[Case Detail: why flagged]
+    end
+
+    A1 --> B1
+    A2 --> B1
+    B1 --> B2
+    B2 --> C1
+    B2 --> C2
+    B2 --> C3
+    C1 --> D1
+    C2 --> D1
+    C3 --> D1
+    D1 --> D2
+    D2 --> E1
+    E1 --> E2
+    E1 --> E3

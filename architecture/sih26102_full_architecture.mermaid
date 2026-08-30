@@ -1,0 +1,130 @@
+flowchart TD
+    subgraph RAWLS["Raw - Lok Sabha (have)"]
+        L1[Works_Recommended.csv]
+        L2[Works_Sanctioned.csv]
+        L3[Works_Completed.csv]
+        L4[Expenditure.csv]
+        L5[Lok_Sabha_alloc_limit.csv - 543 MPs]
+        L6[Amount_consented_for_Calamity.csv - 13 rows, 11 MPs]
+    end
+
+    subgraph RAWRS["Raw - Rajya Sabha (to pull)"]
+        RS1[Works_Recommended.csv - RS]
+        RS2[Works_Sanctioned.csv - RS]
+        RS3[Works_Completed.csv - RS]
+        RS4[Expenditure.csv - RS]
+        RS5[Rajya_Sabha_alloc_limit.csv]
+    end
+
+    subgraph CLEAN["Cleaning Layer"]
+        C1[Strip BOM + ALL whitespace incl embedded tabs, before any ID parsing]
+        C2[Split Work field: WS-ID left of first dash, Work TITLE right of it - do NOT call this Category]
+        C3[True Work Category stays its own column - Normal/Others, Trust and Society, Repair and Renovation]
+        C4[Parse work_id into mp_no / fy / work_no]
+        C5{ID parses?}
+        C5A[Valid WS-ID - normal path]
+        C5B[NA- or unparseable - kept, flagged unparseable_id=true, not dropped]
+    end
+
+    subgraph MERGE["Master Build - both chambers, same logic"]
+        M1[Union 4 stage tables by work_id: is_recommended/is_sanctioned/is_completed/has_expenditure]
+        M2[Backfill mp_name/state/constituency from Expenditure - never backfill work_category from Expenditure, it has no true category column]
+        M3[LEFT JOIN full alloc_limit roster - all 543 LS + all RS MPs, even zero-works MPs, so denominators are correct]
+        M4[Join calamity_consent]
+        M5[Concatenate LS master + RS master]
+    end
+
+    subgraph MASTEROUT["mplads_master_works_ALL.csv"]
+        O1[Every allocation-roster MP present, even with zero works]
+        O2[unparseable_id flag preserved, not silently dropped]
+        O3[work_title vs work_category kept semantically separate]
+    end
+
+    subgraph AGG["MP-Level Aggregate Table"]
+        A1[Per MP: works count, sanctioned vs disbursed, avg delay, overrun count, spend vs alloc_limit pct]
+        A2[Worst-offenders ranking - the MP-risk view]
+    end
+
+    subgraph FEAT["Feature Engineering - per work"]
+        F1[sanctioned - recommended delta]
+        F2[disbursed / sanctioned ratio]
+        F3[vendor count per work]
+        F4[days between stage transitions]
+    end
+
+    subgraph DETECT["Detection Engine"]
+        D0[Semantic embeddings - paraphrase-multilingual-MiniLM-L12-v2]
+        D1[Anomaly scores - Isolation Forest]
+        D2[Duplicate fuzzy-match: MP + category + amount + description]
+        D3[Overrun / delay rule flags]
+    end
+
+    subgraph CLASSIFY["Fraud Classification"]
+        FC1[Pattern to fraud type: siphoned funds, duplicate claim, over-invoicing, ghost work]
+    end
+
+    subgraph LEGAL["Legal-Route Annotation"]
+        LG1[HARDCODED lookup: fraud type to statute - BNS/PC Act/PMLA/RTI]
+        LG2[Model NEVER outputs legal citations - locked rule]
+    end
+
+    subgraph EVID["Evidence Dossier Builder"]
+        E1[Pulls raw rows from original Recommended/Sanctioned/Completed/Expenditure files as proof, not just the flag]
+    end
+
+    subgraph UI["Agency Dashboard"]
+        U1[Investigation Queue - ranked by risk]
+        U2[Case Drill-down + Timeline]
+        U3[MP-risk view from Aggregate Table]
+    end
+
+    subgraph DEMO["Judging Setup"]
+        DM1[Offline snapshot export - full pipeline output frozen, zero live API at demo time]
+    end
+
+    subgraph LOOP["Feedback Loop - locked selling point, shown as roadmap arrow"]
+        G1[Agency confirms/rejects flag]
+        G2[Confirmed rows become labeled training data]
+        G3[Model retrains, weights update]
+    end
+
+    L1-->C1
+    L2-->C1
+    L3-->C1
+    L4-->C1
+    RS1-->C1
+    RS2-->C1
+    RS3-->C1
+    RS4-->C1
+    C1-->C2-->C3-->C4-->C5
+    C5-->C5A
+    C5-->C5B
+    C5A-->M1
+    C5B-->M1
+    M1-->M2-->M3
+    L5-->M3
+    RS5-->M3
+    L6-->M4
+    M3-->M4-->M5-->O1
+    M5-->O2
+    M5-->O3
+    O1-->A1-->A2
+    O1-->F1
+    O1-->F2
+    O1-->F3
+    O1-->F4
+    F1-->D1
+    F2-->D1
+    F3-->D2
+    F4-->D3
+    D0-->D2
+    D1-->FC1
+    D2-->FC1
+    D3-->FC1
+    FC1-->LG1-->LG2
+    FC1-->E1
+    LG2-->U1
+    E1-->U2
+    A2-->U3
+    U1-->DM1
+    U1-.->G1-.->G2-.->G3-.->D1
