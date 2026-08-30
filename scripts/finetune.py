@@ -111,6 +111,17 @@ def precision_at_k(model, test_df, k=PK_K, n_queries=PK_QUERIES, seed=SEED):
     return round(hits / max(1, total), 4)
 
 
+def layman_line(epoch, row, acc, pk, final=False):
+    trend = "rising" if acc > 0.9 else "decent but improvable"
+    verdict = "the model has learned to spot near-identical duplicate work descriptions well." if acc >= 0.9 else "the model is still learning; more lessons may help."
+    status = "ALL 4 LESSONS COMPLETE - model is trained and saved." if final else f"LESSON {int(epoch)} of 4 done - model shown the full dataset {int(epoch)} time(s)."
+    return (
+        f"{status} Test: it correctly spots the duplicate work it is looking for {acc:.1%} of the time "
+        f"({trend}), and finds the real matching work inside the top {PK_K} candidates in {pk:.1%} of tests. "
+        f"Plain-English verdict: {verdict} File: metrics/metrics.csv"
+    )
+
+
 def main():
     os.makedirs(OUT_DIR, exist_ok=True)
     os.makedirs(BEST_DIR, exist_ok=True)
@@ -170,6 +181,8 @@ def main():
         with open(metrics_path, "a", newline="") as f:
             csv.DictWriter(f, fieldnames=list(row)).writerow(row)
         print(f"  epoch {epoch}: train_loss={row['train_loss']} val_acc={acc} p@{PK_K}={pk} ({elapsed}s) best={best_path}")
+        layman = layman_line(epoch, row, acc, pk, epoch == EPOCHS)
+        print(f"  [plain-english] {layman}", flush=True)
 
     total_steps = len(train_dl) * EPOCHS
     model.fit(
@@ -183,6 +196,7 @@ def main():
         max_grad_norm=1.0,
         callback=callback,
         show_progress_bar=True,
+        use_amp=True,
     )
 
     print(f"\nBest val acc: {best_acc:.4f} -> {best_path}")
