@@ -7,6 +7,37 @@ either. Entries are date-ordered, newest first. Mirrored to the Notion working d
 
 ---
 
+## 2026-08-30 — FC1 fraud classification + LG1 hardcoded legal lookup wired in
+
+### Technical
+- `src/mplads/classify.py` (FC1): deterministic, explainable pattern→type mapping. A
+  flagged work is typed from its signals only — duplicate-lead → `duplicate_claim`;
+  stalled+zero-disbursal → `siphoned_funds`; stalled-only → `ghost_work`;
+  cost/sanction overrun → `over_invoicing`; else `statistical_anomaly`. Priority-ordered;
+  always emits a narrative + corroborating signals. Never asserts guilt.
+- `src/mplads/legal.py` (LG1): HARDCODED fraud-type→legal-route table (BNS / PC Act /
+  PMLA), route, referral chain, caveat note. Nothing model-generated — satisfies the
+  locked "model never outputs legal citations" rule. `verify_table()` guards completeness.
+- Engine now annotates every row with `fraud_type`, `fraud_priority`, `fraud_signals`,
+  `fraud_narrative`, `legal_route` (written to `metrics/flags.csv`). Evidence dossiers
+  gained "Fraud classification (FC1)" + "Legal route (LG1)" sections.
+- Real-data distribution (honest): 3815 flagged → 2177 statistical_anomaly, 1170
+  siphoned_funds, 468 duplicate_claim. `ghost_work`/`over_invoicing` emit 0 because the
+  file contains no cost-overrun rows (0 exp_total > sanction by construction).
+
+### Layman
+- Each flagged work now gets a label of the SORT of problem it might be — "same work
+  resubmitted", "money sanctioned but no work and no payout", or "statistically odd" —
+  together with a one-line plain explanation and which signals flagged it.
+- The legal bit stays 100% hardcoded and separate: a file maps each problem type to the
+  Acts an investigator might consider and who to route it to. The model has no legal
+  opinions — as locked in our rules. Every evidence file now ends with both the
+  "why it looks wrong" and the "which legal angles to assess" sections.
+- Honest note: the data has zero over-invoicing cases on-record (no work spent more than
+  sanctioned), so no work was typed ghost-work or over-invoicing — we don't invent flags.
+
+---
+
 ## 2026-08-30 — Detection engine v1 (D1/D2/D3) + risk scoring + evidence dossiers
 
 ### Technical
