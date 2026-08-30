@@ -15,8 +15,10 @@ import pandas as pd
 
 from . import config
 from .anomaly import fit_anomaly_scores
+from .classify import annotate as annotate_fraud
 from .duplicates import compute_dup_signals
 from .features import build_features
+from .legal import legal_route
 from .rules import rule_flags, rule_reason
 
 
@@ -72,6 +74,13 @@ def run_engine(master_path=None, save=True) -> pd.DataFrame:
     out["risk_score"] = np.clip(risk, 0, 100).astype(int)
 
     out["is_flagged"] = out["reasons"].str.len() > 0
+
+    # FC1: fraud classification on flagged works (pattern -> type, no verdict)
+    out = annotate_fraud(out)
+
+    # LG1: hardcoded legal route for the chosen fraud type (never model-generated)
+    legal = out["fraud_type"].map(lambda t: legal_route(t).get("route", "internal - review only"))
+    out["legal_route"] = legal
 
     out = out.sort_values("risk_score", ascending=False).reset_index(drop=True)
 

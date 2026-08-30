@@ -13,6 +13,8 @@ import re
 import pandas as pd
 
 from . import config
+from .classify import classify
+from .legal import legal_route
 
 RAW_FILES = {
     "recommended": f"{config.RAW_DIR}/Works Recommended.csv",
@@ -54,16 +56,33 @@ def _kv(series: pd.Series | None, cols) -> str:
 
 
 def _template(work: pd.Series, rows: dict, flag_reasons: str) -> str:
+    cls = classify(work)
+    legal = legal_route(cls["fraud_type"] if work.get("is_flagged") else "statistical_anomaly")
     lines = []
     lines.append(f"# Work {work['work_id']}")
     lines.append("")
     lines.append(f"- **Risk score:** `{work.get('risk_score', '?')}/100`  ")
+    lines.append(f"- **Suspected pattern:** `{cls['fraud_type'] or 'none'}`  ")
     lines.append(f"- **Flags:** {flag_reasons or '(row-level flags none; aggregated signal)'}")
     lines.append("")
     lines.append("## Flag reasoning")
     lines.append("")
     lines.append(f"> {work.get('reasons', '') or 'see checklist below'}")
     lines.append("")
+    if cls["fraud_type"]:
+        lines.append("## Fraud classification (FC1 - pattern only, no verdict)")
+        lines.append("")
+        lines.append(f"- Signals: `{', '.join(cls['signals']) or 'none'}`")
+        lines.append(f"- Narrative: {cls['narrative']}")
+        lines.append("")
+        lines.append("## Legal route (LG1 - hardcoded lookup, model never cites law)")
+        lines.append("")
+        lines.append(f"- Route: **{legal['route']}**")
+        if legal["statutes"]:
+            lines.append("- Statutory areas to assess: " + "; ".join(legal["statutes"]))
+        lines.append(f"- Refer to: {legal['refer_to']}")
+        lines.append(f"- Note: {legal['note']}")
+        lines.append("")
     for src, s in rows.items():
         lines.append(f"## Raw {src.capitalize()} row")
         lines.append("")
