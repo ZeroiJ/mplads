@@ -7,6 +7,32 @@ either. Entries are date-ordered, newest first. Mirrored to the Notion working d
 
 ---
 
+## 2026-08-30 — Repo cleanup + go-live deployment guide
+
+### Technical
+- Consolidated all problem-statement assets under `ps-2026/` (source JSON
+  `sih2026_ps_FULL_DETAIL.json`, deep-dive markdowns). Dropped the now-empty root
+  `analysis/` dir. Updated the README repo tree to the current layout
+  (`src/mplads`, `scripts`, `metrics`, `evidence`, `docs`).
+- New `docs/DEPLOYMENT.md` — the $0-tier go-live guide: Cloudflare Pages dashboard +
+  Cloudflare Worker JSON API (KV-backed, reads our committed `metrics/*.csv`) +
+  free Hugging Face Space hosting the fine-tuned embedding for an optional
+  "similar-work" live box. Includes locked-guardrails checklist (pattern warnings,
+  verbatim legal_route, NA- IDs), wrangler.io config, KV seed commands, and a
+  pre-demo smoke test list.
+- Verified `models/best/epoch_4.0` loads directly via `SentenceTransformer(...)`
+  (384-d embeddings) — no re-export needed to push the checkpoint to HF.
+
+### Layman
+- We tidied the folder layout so judges/teammates can find things (problem statement,
+  code, outputs all clearly separated) and wrote a step-by-step "put this online for
+  free" manual: dashboard on Cloudflare, small data API, and the AI model hosted free
+  on Hugging Face. Costs ₹0. The doc also lists the checks to run before demo day and
+  keeps our hard rules enforced (we always say "possible pattern — verify", never
+  "guilty", and legal text is hardcoded).
+
+---
+
 ## 2026-08-30 — FC1 fraud classification + LG1 hardcoded legal lookup wired in
 
 ### Technical
