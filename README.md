@@ -178,13 +178,15 @@ Known data quirks (preserved as flags, never silently dropped): `NA-` unparseabl
 
 ```
 mplads/
-├── data/                 # raw exports + master CSV (raw/ gitignored)
-├── scripts/              # similarity demo, pair builder, fine-tune
-├── architecture/         # .mermaid diagrams
-├── notebooks/            # EDA / results graphs
-├── models/               # trained checkpoints (gitignored — keep on disk/GDrive)
-├── analysis/             # problem-statement deep dives
-└── ps-2026/              # SIH problem statement source
+├── src/mplads/          # detection engine package (rules, duplicates, anomaly, classify, legal, evidence)
+├── scripts/             # finetune, pair builder, real-sweep, detection runner, demo
+├── data/                # raw exports + master CSV (raw/ gitignored)
+├── metrics/             # flags.csv, MP aggregate, worst offenders, model metrics
+├── evidence/            # per-work evidence dossiers (FC1 + LG1)
+├── architecture/        # .mermaid diagrams
+├── notebooks/           # EDA / results graphs
+├── models/              # trained checkpoints (gitignored — keep on disk/GDrive)
+└── ps-2026/             # SIH problem statement source + analysis deep dives
 ```
 
 **Trained models live in `models/`** — they are **not** committed to git (large binaries). The `.gitkeep` keeps the folder tracked; weights are re-downloadable or stored externally (e.g. Google Drive).
