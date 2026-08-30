@@ -32,17 +32,17 @@ def aggregate(flags: pd.DataFrame) -> pd.DataFrame:
         zero_disbursal=("flag_zero_disbursal", "sum"),
         dup_leads=("has_duplicate_lead", "sum"),
         anomalies=("is_anomaly", "sum"),
-        mean_risk=("risk_score", "mean"),
+        avg_risk_per_work=("risk_score", "mean"),
     ).reset_index()
 
     g["spend_pct_alloc"] = np.where(g["alloc_limit"] > 0, g["spent_total"] / g["alloc_limit"] * 100, np.nan)
-    g["risk"] = (
+    g["cumulative_risk_points"] = (
         g["stalled"] * 3
         + g["dup_leads"] * 4
         + g["anomalies"] * 2
         + g["zero_disbursal"] * 2
     )
-    g = g.sort_values("risk", ascending=False).reset_index(drop=True)
+    g = g.sort_values("cumulative_risk_points", ascending=False).reset_index(drop=True)
     g["risk_rank"] = np.arange(1, len(g) + 1)
     return g
 

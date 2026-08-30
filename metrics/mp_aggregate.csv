@@ -1,4 +1,4 @@
-mp_no,mp_name,mp_state,works,sanctioned,completed,recommended_total,sanctioned_total,disbursed_total,spent_total,alloc_limit,stalled,zero_disbursal,dup_leads,anomalies,mean_risk,spend_pct_alloc,risk,risk_rank
+mp_no,mp_name,mp_state,works,sanctioned,completed,recommended_total,sanctioned_total,disbursed_total,spent_total,alloc_limit,stalled,zero_disbursal,dup_leads,anomalies,avg_risk_per_work,spend_pct_alloc,cumulative_risk_points,risk_rank
 334.0,Shri Chandra Prakash Choudhary,Jharkhand,457,451,0,38736462.0,38736462.0,0.0,5685177.0,147000000.0,379,451,0,0,48.7636761487965,3.867467346938776,2039,1
 577.0,Jaswantsinh Sumanbhai Bhabhor,Gujarat,140,113,4,39185188.0,34949518.0,1279500.0,9339102.0,147000000.0,0,109,40,46,29.285714285714285,6.353130612244898,470,2
 353.0,Adv Dean Kuriakose,Kerala,84,55,1,23579067.0,17283339.0,0.0,8102721.0,147000000.0,3,55,62,0,32.79761904761905,5.512055102040817,367,3

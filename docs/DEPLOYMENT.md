@@ -42,9 +42,9 @@ still load a private model):
 
 ```bash
 huggingface-cli login          # token with write scope
-huggingface-cli repo create sIH26102/e5-base-mplads-v1 --type model --private
+huggingface-cli repo create sIH26102/mplads-minilm-embed-v1 --type model --private
 # upload the whole checkpoint directory:
-for f in models/best/epoch_4.0/*; do huggingface-cli upload sIH26102/e5-base-mplads-v1 "$f" "$(basename $f)"; done
+for f in models/best/epoch_4.0/*; do huggingface-cli upload sIH26102/mplads-minilm-embed-v1 "$f" "$(basename $f)"; done
 ```
 
 ## 2. Host the model on a free Hugging Face Space (optional live-check box)
@@ -80,7 +80,7 @@ import gradio as gr
 from sentence_transformers import SentenceTransformer
 import numpy as np
 
-m = SentenceTransformer("sIH26102/e5-base-mplads-v1")
+m = SentenceTransformer("sIH26102/mplads-minilm-embed-v1")
 
 def encode(text: str, normalize: bool = True):
     e = m.encode("query: " + text, normalize_embeddings=normalize)
@@ -189,7 +189,9 @@ Pick one page that consumes the API and matches the architecture diagram's UI:
 - **Case detail** — show the evidence dossier content rendered from
   `GET /api/work/{id}` (serve the MD as JSON from KV) including the FC1 "why it
   looks wrong" + the **verbatim** LG1 legal section + the verification checklist.
-- **MP scoreboard** — top worst offenders from `/api/offenders`.
+- **MP scoreboard** — top worst offenders from `/api/offenders`. Columns are `cumulative_risk_points`
+  (sum across the MP's works — NOT a 0-100 scale) and `avg_risk_per_work` (the 0-100-per-work average,
+  comparable to the per-work `risk_score`). Never render both under the same "risk score" label.
 
 ```bash
 # example pure-static build with vite
@@ -203,7 +205,7 @@ A custom domain (`dashboard.mplads.in`) is a one-click Pages setting — optiona
 ## 5. Smoke test checklist (before demo day)
 
 - [ ] `curl "https://<workers-dev>/api/works?type=duplicate_claim&page=1"` returns JSON
-- [ ] `/api/mps` top row == Chandra Prakash Choudhary, risk 2039 (matches `worst_offenders.csv`)
+- [ ] `/api/mps` top row == Chandra Prakash Choudhary, cumulative_risk_points 2039, avg_risk_per_work 48.8 (matches `worst_offenders.csv`; per-work scale stays 0-100 in `flags.csv`)
 - [ ] A dossier opens and shows BOTH sections: FC1 + LG1 verbatim
 - [ ] Live `/api/similar?desc=construction of concrete road near ...` returns on an MP-lead
 - [ ] No "guilty"/"jail"/"penalty" strings anywhere in the UI (grep your build)

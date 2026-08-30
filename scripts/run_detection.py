@@ -27,8 +27,9 @@ def main():
     print(json.dumps(summary, indent=2))
 
     agg = aggregate.run(flags, save=True)
-    print("\n=== TOP 5 WORST-OFFENDER MPS (by risk) ===")
-    cols = ["mp_no", "mp_name", "mp_state", "works", "stalled", "dup_leads", "anomalies", "risk", "risk_rank"]
+    print("\n=== TOP 5 WORST-OFFENDER MPS (by cumulative_risk_points) ===")
+    cols = ["mp_no", "mp_name", "mp_state", "works", "stalled", "dup_leads",
+            "anomalies", "cumulative_risk_points", "avg_risk_per_work", "risk_rank"]
     print(agg[cols].head(5).to_string(index=False))
 
     n = args.dossiers
