@@ -1,41 +1,52 @@
 flowchart TD
-    subgraph DS["Data Sources (Cached, Public)"]
-        A1[mplads.gov.in per-work tables]
-        A2[eSAKSHI historical data Apr 2023 onward]
+    subgraph RAW["1. Raw Data Sources"]
+        LS["Lok Sabha CSVs\nRecommended / Sanctioned / Completed / Expenditure"]
+        RS["Rajya Sabha CSVs\nSame tables, Sarthak pulling"]
+        AL["MP Allocation Limits\n543 LS + RS MPs"]
     end
 
-    subgraph ETL["Data Pipeline"]
-        B1[Ingestion and Cleaning]
-        B2[Normalize schema: pre and post eSAKSHI era]
+    subgraph PIPE["2. Pipeline (Python, runs locally in repo)"]
+        C1["Clean + Normalize\nstrip BOM/whitespace, parse work_id,\nsplit title vs category"]
+        C2["Master Build\nunion 4 stage tables,\njoin alloc limits + calamity"]
+        C3["Feature Engineering\nsanctioned-recommended delta,\nvendor count, days-to-stage"]
+        D1["D1: Anomaly Detection\nIsolation Forest on features"]
+        D2["D2: Duplicate Detection\nfuzzy text + geo + amount +\nMiniLM-L12-v2 embeddings"]
+        D3["D3: Stalled / Zero Disbursal\nrule-based flags"]
+        FC["FC1: Fraud Classification\npattern → fraud_type + narrative"]
+        LG["LG1: Legal Route\nhardcoded lookup:\nBNS / PC Act / PMLA / RTI"]
+        EVI["Evidence Dossier\nraw rows as proof + FC1 + LG1"]
     end
 
-    subgraph DETECT["Detection Modules"]
-        C1[Cost-Norm Anomaly Detection - Isolation Forest]
-        C2[Duplicate-Work Detection - text similarity + geo + amount]
-        C3[Delay Prediction - rules or regression]
+    subgraph OUT["3. Precomputed Outputs (committed to repo)"]
+        CSV["flags.csv\n17,879 works, fraud_type + legal_route"]
+        MP["mp_aggregate.csv\ncumulative_risk_points,\navg_risk_per_work, rank"]
+        DOSS["evidence/*.md\none dossier per flagged work"]
     end
 
-    subgraph RISK["Risk Aggregation"]
-        D1[Combine signals into Risk Score per work]
-        D2[Guardrail: label as review flag, never accusation]
+    subgraph HOST["4. Live Hosting ($0: Cloudflare + Hugging Face)"]
+        KV["Cloudflare Workers\nTypeScript API\nreads from KV + R2"]
+        FE["Cloudflare Pages\nRiya's React/Vite dashboard"]
+        HF["Hugging Face Space\nMiniLM-L12-v2\nPOST /predict, GET /health"]
     end
 
-    subgraph UI["Dashboard - One View, Role Filters"]
-        E1[Flagged Cases List]
-        E2[Filter by MP / District / State / Ministry]
-        E3[Case Detail: why flagged]
-    end
-
-    A1 --> B1
-    A2 --> B1
-    B1 --> B2
-    B2 --> C1
-    B2 --> C2
-    B2 --> C3
-    C1 --> D1
-    C2 --> D1
+    LS --> C1
+    RS --> C1
+    AL --> C2
+    C1 --> C2
+    C2 --> C3
     C3 --> D1
-    D1 --> D2
-    D2 --> E1
-    E1 --> E2
-    E1 --> E3
+    C3 --> D2
+    C3 --> D3
+    D1 --> FC
+    D2 --> FC
+    D3 --> FC
+    FC --> LG
+    FC --> EVI
+    LG --> EVI
+    EVI --> OUT
+
+    CSV -.->|"uploaded to KV"| KV
+    MP -.->|"uploaded to KV"| KV
+    DOSS -.->|"uploaded to KV"| KV
+    KV --> FE
+    KV -.->|"live /api/similar\nproxy call"| HF

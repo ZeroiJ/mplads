@@ -22,6 +22,18 @@ Workers** (thin JSON API), **Hugging Face Space** (embedding model, optional).
 
 ---
 
+## Team Roles
+
+| Role | Person | What they own |
+|------|--------|--------------|
+| Backend + data pipeline | You (Zeroij) | Python pipeline, detection engine, precomputed outputs, CF Worker |
+| Model + uptime | You | HF Space (MiniLM-L12-v2), health checker, auto-restart |
+| Frontend app | Riya | TypeScript/React/Vite dashboard on Cloudflare Pages |
+| Legal data | Riya | `data/legal/legal_routes.json` → integrate into LG1 |
+| RS Rajya Sabha pipeline | Sarthak | Pairs → fine-tune → sweep → engine (same pipeline, RS data) |
+
+---
+
 ## 1. Push the fine-tuned embedding model to Hugging Face (one time)
 
 The best checkpoint (`models/best/epoch_4.0`, val_acc 0.963) is already a full
@@ -98,11 +110,11 @@ Everything the dashboard needs is a filter/serve of static artifacts. New dir:
 
 ```
 webapp/
-├── worker/            # the Cloudflare Worker
+├── worker/            # the Cloudflare Worker (TypeScript)
 │   ├── wrangler.toml
-│   ├── src/index.js
+│   ├── src/index.ts
 │   └── package.json
-└── dashboard/         # static SPA built to dist/ (any framework → static)
+└── dashboard/         # Riya's React/Vite SPA → static build → dist/
     └── dist/
 ```
 
@@ -110,7 +122,7 @@ webapp/
 
 ```toml
 name = "mplads-api"
-main = "src/index.js"
+main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
 [[kv_namespaces]]
@@ -121,24 +133,29 @@ id = "REPLACE_ME"          # wrangler kv:namespace create MPLADS
 HF_SPACE = "https://zeroij-sih26102-mplads-embed.hf.space"
 ```
 
-`webapp/worker/src/index.js` — rough but complete:
+`webapp/worker/src/index.ts` — rough but complete:
 
-```js
-const f = async (env, name) => {         // flags.csv / mp_aggregate.csv / worst_offenders.csv
-  return await env.MPLADS.get(`csv:${name}`);          // uploaded into KV (step 5)
+```ts
+interface Env {
+  MPLADS: KVNamespace;
+  HF_SPACE: string;
+}
+
+const getCsv = async (env: Env, name: string) => {
+  return await env.MPLADS.get(`csv:${name}`);
 };
 
 export default {
-  async fetch(req, env, ctx) {
+  async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(req.url);
 
     // CORS for the Pages origin
-    const headers = { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" };
-    const json = (o, h) => new Response(typeof o === "string" ? o : JSON.stringify(o), { headers: h });
+    const headers: Record<string, string> = { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json" };
+    const json = (o: unknown, h: Record<string, string>) => new Response(typeof o === "string" ? o : JSON.stringify(o), { headers: h });
 
     if (url.pathname === "/api/works") {
-      const csv = await f(env, "flags.csv");
-      const rows = csvToObjects(csv);
+      const csv = await getCsv(env, "flags.csv");
+      const rows = csvToObjects(csv!);
       const { mp, state, risk_min = "0", type = "", page = "1" } = Object.fromEntries(url.searchParams);
       const out = rows
         .filter(r => (!mp || r.mp_name?.includes(mp)))
@@ -148,13 +165,14 @@ export default {
       return json(paginate(out, +page), headers);
     }
 
-    if (url.pathname === "/api/mps")       return json(await f(env, "mp_aggregate.csv"), headers);
-    if (url.pathname === "/api/offenders") return json(await f(env, "worst_offenders.csv"), headers);
+    if (url.pathname === "/api/mps")       return json(await getCsv(env, "mp_aggregate.csv"), headers);
+    if (url.pathname === "/api/offenders") return json(await getCsv(env, "worst_offenders.csv"), headers);
 
     if (url.pathname === "/api/similar" && url.searchParams.get("desc")) {
       // OPTIONAL live check: embed desc on HF Space, compare to flagged anchors
-      const emb = await (await fetch(env.HF_SPACE + "/predict?data=" + encodeURIComponent(JSON.stringify([url.searchParams.get("desc")])))).json();
-      const anchors = JSON.parse(await f(env, "anchors.json"));   // precomputed: work_id+embedding of flagged works
+      const resp = await fetch(env.HF_SPACE + "/predict?data=" + encodeURIComponent(JSON.stringify([url.searchParams.get("desc")])));
+      const emb = await resp.json();
+      const anchors = JSON.parse(await getCsv(env, "anchors.json") ?? "[]");   // precomputed: work_id+embedding of flagged works
       const top = topK(emb[0], anchors, 5);
       return json({ desc: url.searchParams.get("desc"), similar: top }, headers);
     }
