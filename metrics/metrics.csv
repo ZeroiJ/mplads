@@ -1,5 +1,5 @@
 epoch,train_loss,val_loss,val_cosine_accuracy,test_precision_at_k,elapsed_sec,lr,model_path
-1.0,0.0547,,0.9565,0.45,510.4,2e-05,/home/zeroij/mplads/models/best/epoch_1.0
-2.0,0.043,,0.9598,0.4467,1034.2,2e-05,/home/zeroij/mplads/models/best/epoch_2.0
-3.0,0.0374,,0.9611,0.4533,1555.1,2e-05,/home/zeroij/mplads/models/best/epoch_3.0
-4.0,0.0339,,0.963,0.45,2069.1,2e-05,/home/zeroij/mplads/models/best/epoch_4.0
+1.0,0.0191,,0.9956,0.52,997.7,2e-05,C:\Users\sarth\OneDrive\Documents\Default Project\mplads\models\best/epoch_1.0
+2.0,0.0121,,0.996,0.53,2034.5,2e-05,C:\Users\sarth\OneDrive\Documents\Default Project\mplads\models\best/epoch_2.0
+3.0,0.0092,,0.9966,0.5333,3112.6,2e-05,C:\Users\sarth\OneDrive\Documents\Default Project\mplads\models\best/epoch_3.0
+4.0,0.0075,,0.9968,0.54,4153.5,2e-05,C:\Users\sarth\OneDrive\Documents\Default Project\mplads\models\best/epoch_4.0
