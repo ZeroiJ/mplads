@@ -19,6 +19,7 @@ checkpoints/
 
 # Training logs
 run.log
+metrics/ls/train.log
 
 # Data (keep raw exports locally; too heavy / licensing for git)
 data/raw/

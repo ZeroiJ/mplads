@@ -1,0 +1,15 @@
+chamber=ls
+pairs=/home/zeroij/mplads/data/pairs.csv
+base_model=paraphrase-multilingual-MiniLM-L12-v2
+epochs=4
+batch_size=16
+lr=2e-05
+seed=42
+amp(fp16)=True
+train_examples=49424
+val_examples=10591
+test_examples=10592
+total_elapsed_sec=2228.0
+best_val_acc=0.963
+best_path=/home/zeroij/mplads/models/ls/epoch_4.0
+metrics_file=/home/zeroij/mplads/metrics/ls/metrics.csv
