@@ -1,0 +1,5 @@
+epoch,train_loss,val_loss,val_cosine_accuracy,test_precision_at_k,elapsed_sec,lr,model_path
+1.0,0.0191,,0.9956,0.52,997.7,2e-05,C:\Users\sarth\OneDrive\Documents\Default Project\mplads\models\best/epoch_1.0
+2.0,0.0121,,0.996,0.53,2034.5,2e-05,C:\Users\sarth\OneDrive\Documents\Default Project\mplads\models\best/epoch_2.0
+3.0,0.0092,,0.9966,0.5333,3112.6,2e-05,C:\Users\sarth\OneDrive\Documents\Default Project\mplads\models\best/epoch_3.0
+4.0,0.0075,,0.9968,0.54,4153.5,2e-05,C:\Users\sarth\OneDrive\Documents\Default Project\mplads\models\best/epoch_4.0

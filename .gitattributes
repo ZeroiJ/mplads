@@ -1,3 +1,4 @@
-models/best/** filter=lfs diff=lfs merge=lfs -text
+models/ls/** filter=lfs diff=lfs merge=lfs -text
+models/rs/** filter=lfs diff=lfs merge=lfs -text
 metrics/flags.csv filter=lfs diff=lfs merge=lfs -text
 metrics/real_sweep.csv filter=lfs diff=lfs merge=lfs -text

@@ -11,6 +11,8 @@ models/*.pth
 models/*.onnx
 models/*.safetensors
 models/best/
+models/ls/
+models/rs/
 models/checkpoints/
 checkpoints/
 !models/.gitkeep

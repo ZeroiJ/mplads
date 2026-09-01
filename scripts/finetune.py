@@ -3,12 +3,15 @@ Fine-tune paraphrase-multilingual-MiniLM-L12-v2 on MPLADS duplicate pairs.
 ===========================================================================
 Loss: CosineSimilarityLoss on labeled 1.0/0.0 pairs from data/pairs.csv.
 
-Per epoch -> metrics/metrics.csv:
+Per epoch -> metrics/<chamber>/metrics.csv:
     epoch, train_loss, val_loss, val_cosine_accuracy, test_precision_at_k,
     elapsed_sec, lr, model_path
 
-Models saved to /mplads/models/best/epoch_N/ and the best-scoring epoch path
-is recorded in /mplads/models/best/best.txt.
+Models saved to /mplads/models/<chamber>/epoch_N/ and the best-scoring epoch path
+is recorded in /mplads/models/<chamber>/best.txt.
+
+Chamber: MPLADS_CHAMBER=ls (default, Lok Sabha, data/pairs.csv)
+         MPLADS_CHAMBER=rs (Rajya Sabha, data/pairs_rs.csv)
 """
 
 import csv
@@ -30,10 +33,11 @@ from sentence_transformers.evaluation import EmbeddingSimilarityEvaluator
 from torch.utils.data import DataLoader
 
 BASE_DIR = "/home/zeroij/mplads"
-PAIRS = f"{BASE_DIR}/data/pairs.csv"
+CHAMBER = os.environ.get("MPLADS_CHAMBER", "ls")  # "ls" (Lok Sabha) or "rs" (Rajya Sabha)
+PAIRS = f"{BASE_DIR}/data/pairs.csv" if CHAMBER == "ls" else f"{BASE_DIR}/data/pairs_rs.csv"
 MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
-OUT_DIR = f"{BASE_DIR}/metrics"
-BEST_DIR = f"{BASE_DIR}/models/best"
+OUT_DIR = f"{BASE_DIR}/metrics/{CHAMBER}"
+BEST_DIR = f"{BASE_DIR}/models/{CHAMBER}"
 EPOCHS = int(os.environ.get("MPLADS_EPOCHS", "4"))
 BATCH_SIZE = int(os.environ.get("MPLADS_BATCH", "16"))
 LR = float(os.environ.get("MPLADS_LR", "2e-5"))
@@ -202,6 +206,21 @@ def main():
     print(f"\nBest val acc: {best_acc:.4f} -> {best_path}")
     print(f"metrics.csv -> {metrics_path}")
     print("Compare vs baseline: python scripts/evaluate_after.py")
+
+    # Dump a run log next to metrics so every training detail is captured
+    run_log = os.path.join(OUT_DIR, "run.log")
+    cfg = {
+        "chamber": CHAMBER, "pairs": PAIRS, "base_model": MODEL_NAME,
+        "epochs": EPOCHS, "batch_size": BATCH_SIZE, "lr": LR, "seed": SEED,
+        "amp(fp16)": True, "train_examples": len(train_ex),
+        "val_examples": len(val_ex), "test_examples": len(test_df),
+        "total_elapsed_sec": round(time.time() - t_start, 1),
+        "best_val_acc": best_acc, "best_path": best_path, "metrics_file": metrics_path,
+    }
+    with open(run_log, "w") as f:
+        for k, v in cfg.items():
+            f.write(f"{k}={v}\n")
+    print(f"run.log -> {run_log}")
 
 
 if __name__ == "__main__":
