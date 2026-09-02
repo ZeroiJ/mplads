@@ -22,12 +22,18 @@ from .legal import legal_route
 from .rules import rule_flags, rule_reason
 
 
-def run_engine(master_path=None, save=True) -> pd.DataFrame:
-    master = pd.read_csv(master_path or config.MASTER)
-
+def run_engine_on_master(
+    master: "pd.DataFrame",
+    save: bool = True,
+    dup_signals: "pd.DataFrame|None" = None,
+) -> pd.DataFrame:
+    """Run detection on an in-memory master DataFrame (built from raw CSVs)."""
     feats = build_features(master)
     flagged, flag_cols = rule_flags(feats)
-    dup_signals = compute_dup_signals(master)
+    if dup_signals is not None:
+        dup_signals = dup_signals.reset_index(drop=True)
+    else:
+        dup_signals = compute_dup_signals(master)
     anomaly, _ifmodel = fit_anomaly_scores(feats)
 
     out = pd.concat(
@@ -87,6 +93,20 @@ def run_engine(master_path=None, save=True) -> pd.DataFrame:
     if save:
         out.to_csv(config.FLAGS_CSV, index=False)
     return out
+
+
+def run_engine(
+    master_path: "str|None" = None,
+    save: bool = True,
+    dup_signals: "pd.DataFrame|None" = None,
+) -> pd.DataFrame:
+    """Run detection reading the master from ``master_path`` (default config.MASTER).
+
+    For the fully-from-uploads path use ``run_engine_on_master`` with a master
+    DataFrame assembled from raw CSVs.
+    """
+    master = pd.read_csv(master_path or config.MASTER)
+    return run_engine_on_master(master, save=save, dup_signals=dup_signals)
 
 
 def summarize(flags: pd.DataFrame) -> dict:

@@ -35,7 +35,10 @@ _ID_RE = re.compile(r"(MP\d+/20\d\d-\d\d\d\d/\d+)")
 def _find_row(path: str, work_id: str) -> pd.Series | None:
     if not os.path.exists(path):
         return None
-    df = pd.read_csv(path, low_memory=False)
+    try:
+        df = pd.read_csv(path, low_memory=False, on_bad_lines="skip")
+    except Exception:
+        return None
     for col in df.columns:
         s = df[col].astype(str)
         extracted = s.str.extract(_ID_RE, expand=False)

@@ -36,12 +36,18 @@ from fastapi.responses import JSONResponse
 
 load_dotenv()
 
-REPO_ROOT = Path(
-    os.environ.get("MPLADS_REPO", Path(__file__).resolve().parent.parent / "mplads")
-).resolve()
+# Repo root: the image copies everything into /app (src/, data/, etc.), so if
+# we're at /app/app.py the repo root is /app. Locally it's repo root/.. .
+REPO_ROOT = Path(os.environ.get("MPLADS_REPO", "")).resolve() if os.environ.get("MPLADS_REPO") else None
+if REPO_ROOT is None or not (REPO_ROOT / "src").exists():
+    here = Path(__file__).resolve().parent
+    REPO_ROOT = here if (here / "src").exists() else Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.mplads import aggregate, config, engine, evidence  # noqa: E402
+from src.mplads.duplicates import compute_dup_signals_live  # noqa: E402
+from src.mplads.engine import run_engine_on_master  # noqa: E402
+from src.mplads.pipeline_from_raw import build_master_from_raw  # noqa: E402
 
 # -----------------------------------------------------------------------------
 # Patch the pipeline config to the real repo location on this host.
@@ -59,7 +65,9 @@ config.REAL_SWEEP_CSV = str(REPO_ROOT / "metrics" / "real_sweep.csv")
 config.PAIRS = str(REPO_ROOT / "data" / "pairs.csv")
 
 # Where the latest uploaded raw CSVs live.
-UPLOAD_DIR = Path(__file__).resolve().parent / "data" / "uploads"
+# Render's free tier has a mostly read-only filesystem; /tmp is the safe
+# writable location. Override with UPLOAD_DIR for local runs if needed.
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", "/tmp/mplads_uploads"))
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 RAW_FILE_NAMES = {
@@ -70,7 +78,8 @@ RAW_FILE_NAMES = {
 }
 
 HF_TOKEN = os.environ.get("HF_TOKEN")
-HF_SPACE_RS = os.environ.get("HF_SPACE_RS", "https://sarthak-mplads-rs-embed.hf.space")
+HF_SPACE = os.environ.get("HF_SPACE_LS") or os.environ.get("HF_SPACE_RS")
+HF_SPACE_RS = HF_SPACE or os.environ.get("HF_SPACE_RS", "")
 API_TOKEN = os.environ.get("API_TOKEN")
 
 # In-memory runtime state.
@@ -102,13 +111,27 @@ def _patch_raw_dir(raw_dir: str) -> None:
 
 
 def _run_pipeline(raw_dir: str) -> None:
-    """Rebuild flags + MP aggregate from raw CSVs in raw_dir."""
+    """Rebuild flags + MP aggregate purely from raw CSVs in ``raw_dir``.
+
+    No precomputed master / real_sweep: the master is assembled from the
+    uploaded files, and duplicate detection is computed live via the HF Space
+    (with a graceful fallback to zero dup signals if the Space is unavailable).
+    """
     global FLAGS, MPS, SOURCE
     _patch_raw_dir(raw_dir)
-    FLAGS = engine.run_engine(master_path=config.MASTER, save=False)
+    master = build_master_from_raw(raw_dir)
+
+    try:
+        dup_signals = compute_dup_signals_live(master, _embed_one)
+    except Exception:
+        # HF Space down / not configured: proceed without dup signals.
+        from src.mplads.duplicates import _empty_signals
+        dup_signals = _empty_signals(master)
+
+    FLAGS = run_engine_on_master(master, save=False, dup_signals=dup_signals)
     MPS = aggregate.run(FLAGS, save=False)
     SOURCE = "sample" if raw_dir == str(REPO_ROOT / "data" / "raw") else "upload"
-    _build_embeddings()
+    _rebuild_similar_embeddings()
 
 
 def _clean_records(df: pd.DataFrame) -> List[Dict[str, Any]]:
@@ -127,8 +150,22 @@ def _clean_records(df: pd.DataFrame) -> List[Dict[str, Any]]:
     return records
 
 
-def _build_embeddings() -> None:
-    """Populate EMBEDDINGS for the current upload by calling the HF Space.
+def _embed_one(text: str) -> List[float]:
+    """Sync embed of a single description via the HF Space (for live D2)."""
+    if not HF_TOKEN or not HF_SPACE_RS:
+        raise RuntimeError("HF not configured")
+    resp = httpx.post(
+        f"{HF_SPACE_RS}/predict",
+        json={"text": str(text)},
+        headers={"Authorization": f"Bearer {HF_TOKEN}"},
+        timeout=60.0,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _rebuild_similar_embeddings() -> None:
+    """Populate EMBEDDINGS for /api/similar over the current upload.
 
     If HF is not configured or the space is unreachable, the cache stays empty
     and /api/similar will return a 503. Upload still succeeds.
@@ -202,9 +239,13 @@ def _check_rate_limit(client_host: str) -> bool:
 # -----------------------------------------------------------------------------
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    # Seed the in-memory state with the repo's committed raw CSVs so the API is
-    # usable before any upload (source="sample").
-    _run_pipeline(str(REPO_ROOT / "data" / "raw"))
+    # Seed the in-memory state with the repo's bundled raw CSVs so the API is
+    # usable before any upload (source="sample"). If the sample data is not
+    # present (e.g. Render Docker image built from a repo where data/raw is
+    # gitignored), start empty and wait for the first upload.
+    sample_raw = REPO_ROOT / "data" / "raw"
+    if sample_raw.exists() and any(sample_raw.iterdir()):
+        _run_pipeline(str(sample_raw))
     yield
 
 

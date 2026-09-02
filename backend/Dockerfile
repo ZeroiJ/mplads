@@ -1,18 +1,20 @@
+# Build context = repo ROOT (run: docker build -t mplads-backend -f backend/Dockerfile .)
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install dependencies first for layer caching.
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install runtime deps first (layer caching).
+COPY backend/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
-# Copy the application code.
-COPY app.py .
+# Backend app + the detection package. Raw CSVs are uploaded at runtime; no
+# precomputed master / real_sweep is required.
+COPY backend/app.py /app/app.py
+COPY src/ /app/src/
 
-# The repo must be mounted or available at /mplads (or set MPLADS_REPO).
-# Example:
-#   docker run -e MPLADS_REPO=/mplads -v /path/to/mplads:/mplads mplads-backend
+# Render injects this env var; default 8000 for local runs.
+ENV PORT=8000
+ENV MPLADS_REPO=/app
 
-EXPOSE 8000
-
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]
+EXPOSE ${PORT}
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT}"]

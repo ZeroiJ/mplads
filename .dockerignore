@@ -1,0 +1,17 @@
+.git
+.venv
+*.venv
+models/
+metrics/
+evidence/
+backend/.venv/
+backend/uploads/
+data/pairs.csv
+data/pairs_rs.csv
+data/mplads_master_works_v3.csv
+node_modules/
+dist/
+*.pyc
+__pycache__/
+.env
+backend/.env
