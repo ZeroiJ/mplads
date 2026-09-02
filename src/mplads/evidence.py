@@ -122,7 +122,6 @@ def _template(work: pd.Series, rows: dict, flag_reasons: str) -> str:
     lines.append("- [ ] Mark verdict: legitimate / needs-flagging / refer")
     lines.append("")
     lines.append("---")
-    lines.append(f"_Auto-generated dossier. Model does **not** issue legal conclusions._")
     return "\n".join(lines)
 
 

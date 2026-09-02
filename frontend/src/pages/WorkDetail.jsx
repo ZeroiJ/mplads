@@ -351,18 +351,6 @@ export default function WorkDetail() {
           </div>
         </div>
       </div>
-
-      {/* Footer disclaimer */}
-      <div style={{
-        padding: '16px 20px', background: 'var(--gray-50)',
-        borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-border)',
-        marginBottom: 32,
-      }}>
-        <p className="body-sm" style={{ color: 'var(--gray-500)', lineHeight: 1.6 }}>
-          Auto-generated dossier. Model does <strong>not</strong> issue legal conclusions.
-          This analysis is for informational purposes only and does not constitute legal advice.
-        </p>
-      </div>
     </div>
   )
 }
