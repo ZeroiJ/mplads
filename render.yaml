@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: mplads-backend
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: HF_TOKEN
+        sync: false
+      - key: HF_SPACE_LS
+        value: https://zeroij-mplads-ls-embed.hf.space
+      - key: MPLADS_REPO
+        value: /app
+      - key: API_TOKEN
+        generateValue: true
+        # Optional: set this to a fixed secret if you want the frontend to send X-API-Token.
+        # If you leave it generated, copy the value from the Render dashboard into the frontend env.
