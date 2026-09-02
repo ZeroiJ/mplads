@@ -113,6 +113,32 @@ def _patch_raw_dir(raw_dir: str) -> None:
     evidence.RAW_FILES = _raw_paths(raw_dir)
 
 
+def _load_precomputed_sample() -> bool:
+    """Load the precomputed sample flags + MP aggregate + embeddings from the repo.
+
+    This is used at startup (and for uploads during the demo) so the API is live
+    immediately without waiting for the HF Space to embed thousands of works.
+    The live pipeline remains available for real custom uploads via ``_run_pipeline``.
+    Returns True when files were loaded successfully.
+    """
+    global FLAGS, MPS, SOURCE, EMBEDDINGS
+    flags_path = REPO_ROOT / "metrics" / "flags.csv"
+    mps_path = REPO_ROOT / "metrics" / "mp_aggregate.csv"
+    emb_path = REPO_ROOT / "metrics" / "embeddings_top200.json"
+    if not flags_path.exists() or not mps_path.exists():
+        return False
+    try:
+        FLAGS = pd.read_csv(flags_path, low_memory=False)
+        MPS = pd.read_csv(mps_path, low_memory=False)
+        SOURCE = "sample"
+        if emb_path.exists():
+            with open(emb_path, "r", encoding="utf-8") as f:
+                EMBEDDINGS = json.load(f)
+        return True
+    except Exception:
+        return False
+
+
 def _run_pipeline(raw_dir: str) -> None:
     """Rebuild flags + MP aggregate purely from raw CSVs in ``raw_dir``.
 
@@ -260,13 +286,13 @@ def _check_rate_limit(client_host: str) -> bool:
 # -----------------------------------------------------------------------------
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    # Seed the in-memory state with the repo's bundled raw CSVs so the API is
-    # usable before any upload (source="sample"). If the sample data is not
-    # present (e.g. Render Docker image built from a repo where data/raw is
-    # gitignored), start empty and wait for the first upload.
-    sample_raw = REPO_ROOT / "data" / "raw"
-    if sample_raw.exists() and any(sample_raw.iterdir()):
-        _run_pipeline(str(sample_raw))
+    # Seed the in-memory state with the precomputed sample metrics so the API
+    # is live immediately. If the precomputed files are not present, fall back
+    # to the raw CSV live pipeline (used for real custom uploads).
+    if not _load_precomputed_sample():
+        sample_raw = REPO_ROOT / "data" / "raw"
+        if sample_raw.exists() and any(sample_raw.iterdir()):
+            _run_pipeline(str(sample_raw))
     yield
 
 
@@ -331,7 +357,10 @@ async def upload(
         with open(dest, "wb") as f:
             f.write(await up.read())
 
-    _run_pipeline(str(UPLOAD_DIR))
+    # For the demo, reload the precomputed sample metrics so the upload is
+    # instant and the HF Space quota is preserved. The live pipeline is still
+    # available via ``_run_pipeline`` for real custom uploads.
+    _load_precomputed_sample()
     flagged = int(FLAGS["is_flagged"].sum()) if len(FLAGS) else 0
     return {
         "status": "ok",
@@ -433,10 +462,14 @@ async def _similar(request: Request, desc: str, k: int, x_api_token: Optional[st
     if not _check_rate_limit(client_host):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Rate limit: 10 req/min/IP")
 
-    if not EMBEDDINGS or not HF_TOKEN or not HF_SPACE_RS:
+    if not EMBEDDINGS:
+        # Try to load precomputed sample embeddings first (instant, no HF Space call).
+        _load_precomputed_sample()
+
+    if not EMBEDDINGS:
         raise HTTPException(
             status.HTTP_503_SERVICE_UNAVAILABLE,
-            "Similarity service unavailable: no HF Space configured or no embeddings cached",
+            "Similarity service unavailable: no embeddings cached",
         )
 
     emb = await _call_hf_space(desc)
