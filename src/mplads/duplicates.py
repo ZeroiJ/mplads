@@ -78,21 +78,22 @@ def compute_dup_signals(master: pd.DataFrame) -> pd.DataFrame:
 
 def compute_dup_signals_live(
     master: pd.DataFrame,
-    embed_one,
+    embed_many,
     threshold: float = config.DUP_SIM_THRESHOLD,
     batch_size: int = 64,
     max_embeddings: int = 1500,
 ) -> pd.DataFrame:
     """Duplicate signals computed live from uploaded CSVs (no real_sweep).
 
-    ``embed_one`` is a callable `(text) -> [384 floats]` that calls the HF
-    Space. Embeds a capped set of work descriptions (``max_embeddings``,
-    prioritised by recommended amount) to keep a free HF Space responsive,
-    finds near-duplicate pairs within the same (mp_no, rounded recommended-
-    amount) group, and aggregates into per-work signals. Rows with empty
-    descriptions produce zero signals.
+    ``embed_many`` is a callable `(batch_texts: List[str]) -> (n, 384) array`
+    that embeds a whole batch (e.g. a batched Gradio SSE call to the HF Space).
+    Embeds a capped set of work descriptions (``max_embeddings``, prioritised
+    by recommended amount) to keep a free HF Space responsive, finds
+    near-duplicate pairs within the same (mp_no, rounded recommended-amount)
+    group, and aggregates into per-work signals. Rows with empty descriptions
+    produce zero signals.
     """
-    from .live_embed import build_pair_table, embed_texts
+    from .live_embed import build_pair_table, embed_texts_batched
 
     m = master.reset_index(drop=True)
     desc = m["work_desc"].astype(str).str.strip() if "work_desc" in m.columns else pd.Series("", index=m.index)
@@ -101,7 +102,7 @@ def compute_dup_signals_live(
     # Prioritise larger-value works within the cap (duplicates of high-value
     # claims matter most); still leaves room for smaller ones.
     order = np.argsort(
-        -m["recommended_amount"].astype(float).fillna(0.0).to_numpy()
+        -m["recommended_amount"].replace("", np.nan).astype(float).fillna(0.0).to_numpy()
     )
     idxs = [i for i in order if usable[i]][:max_embeddings]
 
@@ -109,11 +110,11 @@ def compute_dup_signals_live(
         return _empty_signals(m)
 
     texts = [desc.iloc[i] for i in idxs]
-    embs = embed_texts(texts, embed_one, batch_size=batch_size)
+    embs = embed_texts_batched(texts, embed_many, batch_size=batch_size)
 
     # group key: mp_no + recommended_amount rounded to nearest 1000
     mp = m["mp_no"].astype(str).fillna("").to_numpy()
-    amt = m["recommended_amount"].astype(float).fillna(0.0).to_numpy()
+    amt = m["recommended_amount"].replace("", np.nan).astype(float).fillna(0.0).to_numpy()
     key_arr = [f"{mp[i]}|{int(round(amt[i] / 1000))}" for i in idxs]
 
     pairs = build_pair_table(

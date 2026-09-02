@@ -4,14 +4,17 @@ Reads the spec at `docs/BACKEND_SPEC.md` and `docs/SARTHAK_TASK.md`.
 Only two files are produced: `app.py` and `.env.example`.
 
 The backend never loads the sentence-transformer model itself; it only calls
-out to the RS Hugging Face Space for the optional `/api/similar` endpoint.
+out to the Hugging Face Gradio Space for the optional `/api/similar` endpoint.
 """
 
 import asyncio
 import datetime
+import json
 import math
 import os
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -79,7 +82,7 @@ RAW_FILE_NAMES = {
 
 HF_TOKEN = os.environ.get("HF_TOKEN")
 HF_SPACE = os.environ.get("HF_SPACE_LS") or os.environ.get("HF_SPACE_RS")
-HF_SPACE_RS = HF_SPACE or os.environ.get("HF_SPACE_RS", "")
+HF_SPACE_RS = HF_SPACE or "https://zeroij-mplads-ls-embed.hf.space"
 API_TOKEN = os.environ.get("API_TOKEN")
 
 # In-memory runtime state.
@@ -114,7 +117,7 @@ def _run_pipeline(raw_dir: str) -> None:
     """Rebuild flags + MP aggregate purely from raw CSVs in ``raw_dir``.
 
     No precomputed master / real_sweep: the master is assembled from the
-    uploaded files, and duplicate detection is computed live via the HF Space
+    uploaded files, and duplicate detection is computed live via the HF Gradio Space
     (with a graceful fallback to zero dup signals if the Space is unavailable).
     """
     global FLAGS, MPS, SOURCE
@@ -122,9 +125,9 @@ def _run_pipeline(raw_dir: str) -> None:
     master = build_master_from_raw(raw_dir)
 
     try:
-        dup_signals = compute_dup_signals_live(master, _embed_one)
+        dup_signals = compute_dup_signals_live(master, _hf_embed_or_zero)
     except Exception:
-        # HF Space down / not configured: proceed without dup signals.
+        # HF inference down / not configured: proceed without dup signals.
         from src.mplads.duplicates import _empty_signals
         dup_signals = _empty_signals(master)
 
@@ -150,18 +153,51 @@ def _clean_records(df: pd.DataFrame) -> List[Dict[str, Any]]:
     return records
 
 
-def _embed_one(text: str) -> List[float]:
-    """Sync embed of a single description via the HF Space (for live D2)."""
+def _hf_embed(texts: List[str], max_workers: int = 4) -> List[List[float]]:
+    """Embed a batch of texts via the running Hugging Face Gradio Space.
+
+    The Space (``ZeroiJ/mplads-ls-embed``) exposes a single-text Gradio 4
+    ``/predict`` endpoint. This function calls it for every text, spreading
+    work across a small thread pool so the Space queue can keep busy. Free
+    ZeroGPU has a 5-minute daily quota, so the backend caps the number of texts
+    it embeds (see ``compute_dup_signals_live`` and ``_rebuild_similar_embeddings``).
+    """
     if not HF_TOKEN or not HF_SPACE_RS:
-        raise RuntimeError("HF not configured")
-    resp = httpx.post(
-        f"{HF_SPACE_RS}/predict",
-        json={"text": str(text)},
-        headers={"Authorization": f"Bearer {HF_TOKEN}"},
-        timeout=60.0,
-    )
-    resp.raise_for_status()
-    return resp.json()
+        raise RuntimeError("HF Space not configured")
+    from gradio_client import Client
+
+    texts = [str(t) for t in texts]
+
+    def one(text: str) -> List[float]:
+        last_err = None
+        for attempt in range(3):
+            try:
+                client = Client(src=HF_SPACE_RS, hf_token=HF_TOKEN)
+                vec = client.predict(str(text), api_name="/predict")
+                return [float(x) for x in vec]
+            except Exception as exc:
+                last_err = exc
+                if attempt < 2:
+                    time.sleep(1.0 * (attempt + 1))
+        raise RuntimeError(f"HF Space failed for text: {last_err}")
+
+    with ThreadPoolExecutor(max_workers=max_workers) as ex:
+        rows = list(ex.map(one, texts))
+    return rows
+
+
+def _hf_embed_or_zero(texts: List[str]) -> "np.ndarray":
+    """Batched embed with graceful fallback to zero vectors on any failure."""
+    try:
+        rows = _hf_embed(texts)
+        arr = np.asarray(rows, dtype=float)
+        if arr.ndim == 1:
+            arr = arr.reshape(1, -1)
+    except Exception:
+        arr = np.zeros((len(texts), 384), dtype=float)
+    if arr.shape[0] != len(texts) or arr.shape[1] < 384:
+        return np.zeros((len(texts), 384), dtype=float)
+    return arr[:, :384]
 
 
 def _rebuild_similar_embeddings() -> None:
@@ -180,43 +216,28 @@ def _rebuild_similar_embeddings() -> None:
     flagged = FLAGS[FLAGS["is_flagged"]].copy()
     flagged = flagged[flagged["work_desc"].notna()]
     flagged = flagged[flagged["work_desc"].astype(str).str.strip() != ""]
-    # Limit to the top 200 risk works so a free HF Space isn't hammered.
+    # Limit to the top 200 risk works so the free HF Space isn't hammered.
     flagged = flagged.sort_values("risk_score", ascending=False).head(200)
 
-    client = httpx.Client(timeout=60.0)
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+    descs = [str(x) for x in flagged["work_desc"].tolist()]
+    wids = [str(x) for x in flagged["work_id"].tolist()]
     try:
-        for _, row in flagged.iterrows():
-            wid = str(row["work_id"])
-            text = str(row["work_desc"])
-            try:
-                resp = client.post(
-                    f"{HF_SPACE_RS}/predict",
-                    json={"text": text},
-                    headers=headers,
-                )
-                resp.raise_for_status()
-                EMBEDDINGS[wid] = resp.json()
-            except Exception:
-                # Stop on first failure to avoid burning quota on a broken space.
-                break
-    finally:
-        client.close()
+        arr = _hf_embed_or_zero(descs)
+        for wid, vec in zip(wids, arr):
+            EMBEDDINGS[wid] = vec.tolist()
+    except Exception:
+        EMBEDDINGS = {}
 
 
 async def _call_hf_space(text: str) -> List[float]:
-    headers = {"Authorization": f"Bearer {HF_TOKEN}"}
+    """Embed a single query text via the HF Gradio Space."""
     last_error = None
     for attempt in range(3):
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                resp = await client.post(
-                    f"{HF_SPACE_RS}/predict",
-                    json={"text": text},
-                    headers=headers,
-                )
-                resp.raise_for_status()
-                return resp.json()
+            rows = await asyncio.to_thread(_hf_embed, [str(text)])
+            if rows:
+                return rows[0]
+            raise RuntimeError("empty embedding from Gradio Space")
         except Exception as exc:
             last_error = exc
             await asyncio.sleep(1.0 * (attempt + 1))

@@ -55,6 +55,35 @@ def embed_texts(
     return np.vstack(vecs)
 
 
+def embed_texts_batched(
+    texts: List[str],
+    embed_many: Callable[[List[str]], "np.ndarray"],
+    batch_size: int = 64,
+) -> np.ndarray:
+    """Embed a list of texts by calling ``embed_many`` once per batch chunk.
+
+    ``embed_many`` is a callable `(batch_texts: List[str]) -> 2D array` (e.g. a
+    batched Gradio SSE call). Returns an (n_texts, 384) float array, keeping the
+    input order. A failed batch falls back to zero vectors so detection still
+    proceeds (those rows simply won't match).
+    """
+    vecs: List[np.ndarray] = []
+    for i in range(0, len(texts), batch_size):
+        chunk = texts[i : i + batch_size]
+        try:
+            arr = np.asarray(embed_many(chunk), dtype=float)
+            if arr.ndim == 1:
+                arr = arr.reshape(1, -1)
+        except Exception:
+            arr = np.zeros((len(chunk), 384), dtype=float)
+        if arr.shape[0] != len(chunk) or arr.shape[1] < 384:
+            arr = np.zeros((len(chunk), 384), dtype=float)
+        vecs.append(arr[:, :384])
+    if not vecs:
+        return np.zeros((0, 384))
+    return np.vstack(vecs)
+
+
 def build_pair_table(
     work_ids: List[str],
     group_keys: List[str],

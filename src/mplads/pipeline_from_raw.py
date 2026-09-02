@@ -51,13 +51,8 @@ def _extract_work_id(series: pd.Series) -> pd.Series:
 
 def _money(series: pd.Series) -> pd.Series:
     """Parse Indian rupee strings like '1,23,456 ( ₹ )' -> float rupees."""
-    return (
-        series.astype(str)
-        .str.replace(r"[^\d]", "", regex=True)
-        .str.rstrip()
-        .astype(float)
-        .fillna(0.0)
-    )
+    digits = series.astype(str).str.replace(r"[^\d]", "", regex=True)
+    return pd.to_numeric(digits, errors="coerce").fillna(0.0)
 
 
 def _date(series: pd.Series) -> pd.Series:
