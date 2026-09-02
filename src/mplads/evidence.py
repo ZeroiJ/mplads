@@ -89,6 +89,28 @@ def _template(work: pd.Series, rows: dict, flag_reasons: str) -> str:
         lines.append(_kv(s, ["work", "sanction", "recommend", "amount", "date", "status", "description", "state"])
                      or "_missing_")
         lines.append("")
+    lines.append("## Possible legitimate explanation (human step - avoid false positives)")
+    lines.append("")
+    lines.append("A flag is a **lead for review, not a verdict**. Before treating this as")
+    lines.append("fraud, rule out benign patterns:")
+    lines.append("")
+    if work.get("has_duplicate_lead"):
+        lines.append("- **Duplicate/similar description:** could be one job split into multiple")
+        lines.append("  sanctioned entries (multi-site, installment/phased, or same-date batch),")
+        lines.append("  or boilerplate wording reused for genuinely *different* works in")
+        lines.append("  different villages/categories.")
+    if work.get("flag_zero_disbursal"):
+        lines.append("- **Zero disbursal:** money may still be in pipeline; not yet released,")
+        lines.append("  or awaiting the next FY allocation.")
+    if work.get("flag_stalled"):
+        lines.append("- **Stalled:** could be genuine delay (weather, contractor, approvals)")
+        lines.append("  rather than misappropriation.")
+    if work.get("is_anomaly"):
+        lines.append("- **Statistical anomaly:** amount may be legitimately high (remote site,")
+        lines.append("  terrain, special materials); not necessarily siphoned.")
+    lines.append("- **Cross-check:** compare this work against the enclosing group (same MP,")
+    lines.append("  same category, same date, same vendor) rather than treating each row in isolation.")
+    lines.append("")
     lines.append("## Verification checklist (human step)")
     lines.append("")
     lines.append("- [ ] Confirm duplicate/description against constituency records")

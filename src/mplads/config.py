@@ -20,7 +20,12 @@ WORST_OFFENDERS_CSV = f"{METRICS_DIR}/worst_offenders.csv"
 REAL_SWEEP_CSV = f"{METRICS_DIR}/real_sweep.csv"
 
 MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
-BEST_MODEL = open(f"{BASE_DIR}/models/best/best.txt").read().strip()
+CHAMBER = os.environ.get("MPLADS_CHAMBER", "ls")
+_MODEL_BEST_TXT = f"{BASE_DIR}/models/{CHAMBER}/best.txt"
+if os.path.exists(_MODEL_BEST_TXT):
+    BEST_MODEL = open(_MODEL_BEST_TXT).read().strip()
+else:
+    BEST_MODEL = f"{BASE_DIR}/models/{CHAMBER}/epoch_4.0"
 
 EMBED_BATCH = 256
 
