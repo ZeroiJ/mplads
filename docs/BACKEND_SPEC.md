@@ -23,31 +23,53 @@ Piece A (FastAPI) does the real ML-adjacent work. Both are yours.
 ### The cleanest single-host option for you
 If you want to avoid managing two pieces, **skip CF Workers entirely** and let
 FastAPI expose everything directly (REST + CORS). But the diagram + demo want
-the CF Worker to cache precomputed results cheaply and absorb the abuse of
-Cloudflare's free tier. Recommended plan below gives you **both** — FastAPI is
-the source of truth, CF Worker is the read-only cache.
+the CF Worker to cache **live-uploaded results** cheaply and absorb the abuse
+of Cloudflare's free tier. Recommended plan below gives you **both** — FastAPI
+is the source of truth (recomputes on each upload), CF Worker is the read-only
+cache in front of it.
 
 ---
 
-## What data the backend serves (the static outputs from `metrics/`)
+## What data the backend serves (runtime, NOT pre-recorded) — important
 
-These are **precomputed** by the Python pipeline (already pushed to the repo).
-Your backend serves them, it does not recompute:
+> ### ⚠️ The backend takes **raw CSVs from the live demo path**, not the
+> precomputed `metrics/*.csv` snapshots in the repo. Those committed files are
+> demo references only. When the user (judge) uploads fresh data, the backend
+> recomputes everything from those raw files in memory. This mirrors the TUI
+> ("take raw CSVs and run live, not serve precomputed").
 
-| Artifact | File | What it is |
-|----------|------|-----------|
-| Work-level flags | `metrics/flags.csv` | 17,879 rows, one per work: risk_score, fraud_type, legal_route, all raw fields |
-| MP aggregate | `metrics/mp_aggregate.csv` | Per-MP: cumulative_risk_points, avg_risk_per_work, risk_rank |
-| Worst offenders | `metrics/worst_offenders.csv` | Top-MP ranking (same as mp_aggregate, rank ordering) |
-| Evidence dossiers | `evidence/*.md` | One Md per flagged work, with FC1 + LG1 sections |
-| Model | HF Space (not in repo) | POST /predict → embedding, GET /health |
+**Input — the raw mplads.gov.in CSVs (user uploads these):**
+| File | What it is |
+|------|-----------|
+| Works Recommended.csv | sanctioned/recommended work list + descriptions |
+| Works Sanctioned.csv | sanctioned amounts |
+| Works Completed.csv | completed status |
+| Expenditure on Completed and On-going Works.csv | amount_disbursed |
+| `<alloc_limit>` / Calamity | MP allocation ceilings (optional) |
 
-### flags.csv key columns you must expose (do NOT drop any)
-`work_id`, `mp_name`, `mp_state`, `state`, `constituency`, `work_desc`,
-`work_category`, `work_status`, `recommended_amount`, `sanction_amount`,
-`amount_disbursed`, `risk_score` (0-100 per work), `fraud_type`,
-`legal_route`, `dup_partner_count`, `anomaly_score`, `is_anomaly`,
-`flag_stalled`, `flag_zero_disbursal`, `flag_sanction_overrun`.
+**Output — computed live at runtime from the uploaded files:**
+| Output | What it is |
+|--------|-----------|
+| work-level flags | risk_score, fraud_type, legal_route, all raw fields |
+| MP aggregate | cumulative_risk_points, avg_risk_per_work, risk_rank |
+| evidence dossier (Markdown) | per flagged work, FC1 + LG1 sections |
+
+The pipeline logic (cleaning → features → D1/D2/D3 → FC1 → LG1 → aggregate) is
+the same code in `src/mplads/`. The backend imports that package's rule/anomaly/
+aggregate modules. **Only two parts need the model, and both call the HF Space
+(the backend host itself never loads the model).**
+
+### flags columns you must expose (do NOT drop any)
+The work-level rows must keep: `work_id`, `mp_name`, `mp_state`, `state`,
+`constituency`, `work_desc`, `work_category`, `work_status`,
+`recommended_amount`, `sanction_amount`, `amount_disbursed`,
+`risk_score` (0-100 per work), `fraud_type`, `legal_route`,
+`dup_partner_count`, `anomaly_score`, `is_anomaly`, `flag_stalled`,
+`flag_zero_disbursal`, `flag_sanction_overrun`.
+
+Persist the last uploaded dataset in memory (a module-level dict + optional
+KV cache on the CF Worker) so `/api/works` etc. read from the **live** upload,
+not from any committed file.
 
 ### Guardrails (LOCKED — must not be violated)
 1. **Never output accusations.** The frontend shows "possible fraud pattern —
@@ -77,7 +99,34 @@ GET /
 → { "name": "MPLADS Detection API", "version": "1.0", "endpoints": [...] }
 ```
 
-### 2. List / filter flagged works
+### 2. Upload raw CSVs + run the pipeline live (source of truth)
+```
+POST /api/upload
+content-type: multipart/form-data
+files:
+  works_recommended  = Works Recommended.csv
+  works_sanctioned   = Works Sanctioned.csv
+  works_completed    = Works Completed.csv
+  expenditure        = Expenditure on Completed and On-going Works.csv
+→ {
+    "status": "ok",
+    "works": 17879,
+    "flagged": 3792,
+    "detected_at": "<ISO timestamp>"
+  }
+```
+- This is how "take data from us, not pre-recorded" is honoured. The judge
+  uploads fresh CSVs; the backend **recomputes flags + MP aggregate + evidence
+  in memory from those files right then**. No committed metrics are read.
+- D1 (anomaly) + D3 (rules) + FC1 + LG1 + aggregate run **locally** in the
+  backend (pure pandas/numpy — no model).
+- D2 (duplicate/description similarity) + `/api/similar` are the **only**
+  model calls — they go to the HF Space.
+- Responses are cached to the CF Worker KV so repeat requests hit cache.
+- A small curated demo dataset ships as a fallback so the API works before any
+  upload, tagged `"source": "sample"` vs `"source": "upload"`.
+
+### 3. List / filter flagged works
 ```
 GET /api/works?mp=<name>&state=<state>&fraud_type=<type>&min_risk=<0-100>&page=1&page_size=50
 → {
@@ -92,7 +141,7 @@ GET /api/works?mp=<name>&state=<state>&fraud_type=<type>&min_risk=<0-100>&page=1
   `duplicate_claim`, `ghost_work`, `over_invoicing`.
 - Sort default: `risk_score` descending.
 
-### 3. Single work detail (+ dossier)
+### 4. Single work detail (+ dossier)
 ```
 GET /api/works/{work_id}
 → { ...all flags.csv columns for that row...,
@@ -102,7 +151,7 @@ GET /api/works/{work_id}
 - `evidence` is the parsed `evidence/MP<...>.md` content for that work.
 - 404 if work_id not found.
 
-### 4. MP aggregate / offenders
+### 5. MP aggregate / offenders
 ```
 GET /api/mps
 → { "total": 671, "mps": [ { "mp_name": ..., "cumulative_risk_points": ...,
@@ -116,7 +165,7 @@ GET /api/offenders?top=20
   per-work mean. The frontend must render these as **two different columns**,
   never both under one "risk score" label. Keep both fields separate.
 
-### 5. Live similarity check (proxies to HF, OPTIONAL)
+### 6. Live similarity check (proxies to HF, OPTIONAL)
 ```
 GET /api/similar?desc=<text>&k=5
 → {
@@ -157,45 +206,87 @@ httpx==0.27.*
 python-dotenv==1.0.*
 ```
 
-### Step 2 — copy the data
-From the repo into the backend (or mount them):
+### Step 2 — wire the pipeline package (instead of copying precomputed CSVs)
+The repo already has the detection engine. Import it directly:
+```python
+import sys; sys.path.insert(0, "/home/zeroij/mplads")
+from src.mplads import config, engine, aggregate, evidence
+```
+- `engine.run_engine(save=False)` rebuilds `flags`, `summary` **in memory**
+  from the raw files the user uploaded (you'll pass the uploaded DataFrame,
+  or write the upload stage to a temp dir and point `config.RAW_DIR` at it).
+- `aggregate.run(flags, save=False)` → per-MP rows.
+- `evidence.build_dossiers(flags, ...)` → the Markdown dossier string per
+  flagged work (returned by `/api/works/{id}`).
+
+`backend/` layout:
 ```
 backend/
 ├── app.py
 ├── data/
-│   ├── flags.csv
-│   ├── mp_aggregate.csv
-│   ├── worst_offenders.csv
-│   └── anchors.json          (see step 5)
+│   └── uploads/          (temp: latest uploaded raw CSVs)
 ├── evidence/
-│   └── MP*.md
-└── secrets.env               (NOT committed)
+│   └── (generated in memory per upload)
+└── secrets.env           (NOT committed)
 ```
+For a zero-upload smoke test before the demo, seed a `data/uploads/` with the
+real `data/raw/*.csv` from the repo so `/api/works` works immediately.
 
 ### Step 3 — `app.py` (FastAPI)
-Minimal working version:
+Minimal working version — note it runs the pipeline **on upload**, not from
+precomputed CSVs:
 
 ```python
-import json, os
-from fastapi import FastAPI, HTTPException, Query
+import json, os, shutil, tempfile
+from fastapi import FastAPI, HTTPException, Query, UploadFile, File, Body
 import pandas as pd
 
-BASE = os.path.dirname(__file__)
-flags = pd.read_csv(os.path.join(BASE, "data", "flags.csv"))
-mps = pd.read_csv(os.path.join(BASE, "data", "mp_aggregate.csv"))
+import sys; sys.path.insert(0, "/home/zeroij/mplads")
+from src.mplads import config, engine, aggregate, evidence
 
 app = FastAPI(title="MPLADS Detection API", version="1.0")
 
+# in-memory "database", seeded from repo raws for the pre-upload smoke test
+FLAGS = pd.DataFrame()
+MPS = pd.DataFrame()
+SOURCE = "none"
+
+def _run_pipeline(raw_dir: str):
+    """Rebuild flags + MP aggregate from raw CSVs in raw_dir."""
+    config.RAW_DIR = raw_dir
+    global FLAGS, MPS, SOURCE
+    FLAGS = engine.run_engine(save=False)          # in-memory flags
+    MPS = aggregate.run(FLAGS, save=False)         # in-memory MP rows
+    SOURCE = "upload"
+
+@app.post("/api/upload")
+async def upload(
+    works_recommended: UploadFile = File(...),
+    works_sanctioned: UploadFile = File(...),
+    works_completed: UploadFile = File(...),
+    expenditure: UploadFile = File(...),
+):
+    with tempfile.TemporaryDirectory() as d:
+        for up, name in [(works_recommended,"Works Recommended.csv"),
+                         (works_sanctioned,"Works Sanctioned.csv"),
+                         (works_completed,"Works Completed.csv"),
+                         (expenditure,"Expenditure on Completed and On-going Works as on Date.csv")]:
+            with open(os.path.join(d, name), "wb") as f:
+                f.write(await up.read())
+        _run_pipeline(d)
+    flagged = int(FLAGS["is_flagged"].sum()) if len(FLAGS) else 0
+    return {"status": "ok", "works": len(FLAGS), "flagged": flagged, "detected_at": __import__("datetime").datetime.now().isoformat()}
+
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "mplads-backend", "db_rows": len(flags)}
+    return {"status": "ok", "service": "mplads-backend", "works": len(FLAGS), "source": SOURCE}
 
 @app.get("/api/works")
 def works(
     mp: str = "", state: str = "", fraud_type: str = "",
     min_risk: float = 0, page: int = 1, page_size: int = 50,
 ):
-    df = flags
+    df = FLAGS
     if mp:        df = df[df["mp_name"].str.contains(mp, na=False)]
     if state:     df = df[df["mp_state"].str.contains(state, na=False)]
     if fraud_type:df = df[df["fraud_type"] == fraud_type]
@@ -208,17 +299,17 @@ def works(
 
 @app.get("/api/mps")
 def list_mps():
-    rows = mps.sort_values("cumulative_risk_points", ascending=False)
-    return {"total": len(mps), "mps": rows.to_dict("records")}
+    rows = MPS.sort_values("cumulative_risk_points", ascending=False)
+    return {"total": len(MPS), "mps": rows.to_dict("records")}
 
 @app.get("/api/offenders")
 def offenders(top: int = 20):
-    rows = mps.sort_values("cumulative_risk_points", ascending=False).head(top)
+    rows = MPS.sort_values("cumulative_risk_points", ascending=False).head(top)
     return {"mps": rows.to_dict("records")}
 
 @app.get("/api/works/{work_id}")
 def work_detail(work_id: str):
-    row = flags[flags["work_id"] == work_id]
+    row = FLAGS[FLAGS["work_id"] == work_id]
     if row.empty:
         raise HTTPException(404, "work_id not found")
     return row.iloc[0].to_dict()
@@ -233,26 +324,27 @@ curl localhost:8000/health    # must return ok
 curl "localhost:8000/api/works?fraud_type=duplicate_claim&page=1"
 ```
 
-### Step 5 — the "/api/similar" live model call (the ML piece)
-1. Generate `anchors.json` once (embeddings of flagged works). Put this in a
-   small script `scripts/precompute_anchors.py`:
-   ```python
-   # load model from HF Space (or locally), encode each flagged work_desc,
-   # save {work_id: [384 floats]} -> data/anchors.json
-   ```
+### Step 5 — the "/api/similar" live model call (the only ML + model piece)
+1. After each `/api/upload`, embed the **freshly** flagged `work_desc`s by
+   calling the HF Space and cache the vectors in memory (`{work_id: [384]}`).
+   Do NOT ship pre-frozen anchors — the vectors must come from the current
+   uploaded dataset (same "live, not pre-recorded" rule).
 2. In `app.py`, add `/api/similar`:
    ```python
    @app.post("/api/similar")
    async def similar(desc: str = Body(...), k: int = 5):
-       anchor = precomputed  # dict work_id -> embedding
-       emb = await call_hf_space(desc, HF_TOKEN)   # beatspace /predict
-       scores = cosine(emb, all_anchors)
+       anchors = current_embeddings   # work_id -> [384 floats] from live upload
+       emb = await call_hf_space(desc, HF_TOKEN)   # HF Space /predict
+       scores = cosine(emb, anchors)
        top = topk(scores, k)
        return {"desc": desc, "similar": top}
    ```
 3. `call_hf_space` POSTs to `https://<your-space>.hf.space/predict` with your
    HF token in the header. Wrap in retry + timeout; if HF is down, return a
    cached answer or a 503.
+4. D2 (duplicate detection) uses the **same embeddings** — when `/api/upload`
+   runs, fetch each description's vector from HF once, compute cosine pairs
+   for dup-detection, and reuse those vectors as the `anchors` for `/api/similar`.
 
 ### Step 6 — env / secrets
 `.env` (never commit):
@@ -278,14 +370,20 @@ app.add_middleware(CORSMiddleware,
 
 ### Step 9 — smoke test checklist
 ```
-curl -s <base>/health
+curl -s <base>/health                                    # source=sample before upload
+curl -s -X POST <base>/api/upload -F "works_recommended=@Works Recommended.csv" \
+       -F "works_sanctioned=@Works Sanctioned.csv" \
+       -F "works_completed=@Works Completed.csv" \
+       -F "expenditure=@Expenditure on Completed and On-going Works as on Date.csv"
 curl -s "<base>/api/works?mp=Chandra&page=1"
 curl -s "<base>/api/offenders?top=5"
 curl -s "<base>/api/works/MP18144/2024-2025/135750"
 curl -s -X POST "<base>/api/similar" -d '{"desc":"concrete road near Magrahat"}'
 ```
+- After upload: `/health` shows `source=upload` and the live counts.
 - `/api/offenders?top=5` first row should be **Chandra Prakash Choudhary**
-  (cumulative_risk_points=2039, avg_risk_per_work=48.76, risk_rank=1).
+  (cumulative_risk_points=2039, avg_risk_per_work=48.76, risk_rank=1) on the
+  seeded LS data; on a **fresh upload** the numbers come from that upload.
 - A work detail returns the `evidence` markdown too.
 
 ---
