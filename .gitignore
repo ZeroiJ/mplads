@@ -25,6 +25,12 @@ metrics/ls/train.log
 data/raw/
 *.csv.bak
 
+# Backend (mplads-backend)
+backend/.venv/
+backend/uploads/
+backend/.env
+backend/data/uploads/
+
 # Local tool state
-.omo/
+omo/
 .opencode/

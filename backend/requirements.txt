@@ -1,0 +1,12 @@
+# MPLADS Detection API — Python dependencies
+# Pin major versions only; run: pip install -r requirements.txt
+
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30,<1
+python-multipart>=0.0.9
+pandas>=2.2
+numpy>=1.26
+pydantic>=2.5
+httpx>=0.27
+python-dotenv>=1.0
+scikit-learn>=1.4
