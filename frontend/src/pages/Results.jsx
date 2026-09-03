@@ -2,7 +2,14 @@ import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { getWorks } from '../api'
 
-const FRAUD_TYPES = ['', 'duplicate', 'stalled', 'zero_disbursal', 'sanction_overrun', 'amount_mismatch']
+const FRAUD_TYPES = ['', 'duplicate_claim', 'siphoned_funds', 'statistical_anomaly', 'ghost_work', 'over_invoicing']
+const FRAUD_LABELS = {
+  duplicate_claim: 'Duplicate Claim',
+  siphoned_funds: 'Siphoned Funds',
+  statistical_anomaly: 'Statistical Anomaly',
+  ghost_work: 'Ghost Work',
+  over_invoicing: 'Over Invoicing',
+}
 
 export default function Results() {
   const [data, setData] = useState(null)
@@ -62,7 +69,7 @@ export default function Results() {
           onChange={(e) => setFilters((f) => ({ ...f, fraud_type: e.target.value, page: 1 }))}
         >
           {FRAUD_TYPES.map((t) => (
-            <option key={t} value={t}>{t || 'All fraud types'}</option>
+            <option key={t} value={t}>{t ? FRAUD_LABELS[t] || t : 'All fraud types'}</option>
           ))}
         </select>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -146,7 +153,7 @@ export default function Results() {
                     </td>
                     <td>
                       <span className="badge badge-info">
-                        {w.fraud_type || '—'}
+                        {w.fraud_type ? FRAUD_LABELS[w.fraud_type] || w.fraud_type : '—'}
                       </span>
                     </td>
                     <td>
